@@ -1,0 +1,37 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+rag-cli
+hardcoreai-rag
+
+# Test data
+testdata/*.db
+testdata/*.pdf
+!testdata/README.md
+
+# Config with secrets
+configs/config.yaml
+!configs/config.example.yaml
+
+# Go
+*.test
+*.out
+vendor/
+go.work
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
