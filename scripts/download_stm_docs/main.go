@@ -53,8 +53,6 @@ var stm32Docs = []STMDocument{
 		ChipFamily: "STM32H7",
 		DocType:    "reference_manual",
 	},
-
-	// Add more as needed...
 }
 
 func main() {
