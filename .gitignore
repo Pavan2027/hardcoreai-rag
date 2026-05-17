@@ -1,0 +1,43 @@
+# Go binaries and build output
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# Go test artifacts
+*.test
+*.out
+coverage.html
+coverage.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Environment variables (never commit secrets)
+.env
+.env.*
+
+# SQLite database files (seed DB is generated, not committed)
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Ollama extension binaries placed in bin/
+# vec0.dll / vec0.so should be downloaded locally, not committed
+bin/

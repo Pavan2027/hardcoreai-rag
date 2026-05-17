@@ -1,0 +1,163 @@
+package retrieval
+
+import (
+	"sort"
+	"strings"
+
+	"github.com/Pavan2027/mcu-rag/storage"
+)
+
+// Scoring weights. Must sum to 1.0.
+const (
+	weightSemantic = 0.6
+	weightFTS      = 0.2
+	weightMetadata = 0.2
+)
+
+// Metadata boost values. Individual boosts are additive and capped at 1.0.
+const (
+	boostExactRegister   = 0.30
+	boostPeripheral      = 0.20
+	boostSectionTitle    = 0.15
+	boostReferenceManual = 0.10
+	boostChipFamily      = 0.05
+)
+
+// Rerank applies the weighted additive scoring formula to a hybrid search
+// result list and returns it sorted by FinalScore descending.
+//
+// It overwrites FinalScore (previously the RRF score from HybridSearch) with:
+//
+//	FinalScore = SemanticScore*0.6 + FTSScore*0.2 + MetadataBoost*0.2
+//
+// Parameters:
+//   - results:    merged hybrid results — FinalScore will be overwritten.
+//   - query:      the original user query, used for metadata token matching.
+//   - chipFamily: active chip family filter (e.g. "STM32F4"), or "" if none.
+//
+// Rerank is a pure function: no DB access, no side effects.
+func Rerank(results []storage.SearchResult, query, chipFamily string) []storage.SearchResult {
+	queryTokens := tokenize(query)
+
+	for i := range results {
+		r := &results[i]
+		r.MetadataBoost = computeMetadataBoost(*r, queryTokens, chipFamily)
+		r.FinalScore = r.SemanticScore*weightSemantic +
+			r.FTSScore*weightFTS +
+			r.MetadataBoost*weightMetadata
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].FinalScore > results[j].FinalScore
+	})
+
+	return results
+}
+
+// computeMetadataBoost returns the total metadata boost for a result.
+// Individual boosts are additive; the total is capped at 1.0.
+func computeMetadataBoost(r storage.SearchResult, queryTokens []string, chipFamily string) float64 {
+	boost := 0.0
+
+	// +0.30: all tokens of the register name appear in the query.
+	// Requiring all tokens avoids "USART" alone triggering a register boost.
+	if exactRegisterMatch(r.RegisterName, queryTokens) {
+		boost += boostExactRegister
+	}
+
+	// +0.20: peripheral name token appears in query.
+	if fieldTokenOverlap(r.Peripheral, queryTokens) {
+		boost += boostPeripheral
+	}
+
+	// +0.15: any non-stop-word token of the section title appears in query.
+	if sectionTitleOverlap(r.SectionTitle, queryTokens) {
+		boost += boostSectionTitle
+	}
+
+	// +0.10: document is a reference manual (preferred over app notes).
+	if r.DocType == "reference_manual" {
+		boost += boostReferenceManual
+	}
+
+	// +0.05: chunk belongs to the active chip family filter.
+	if chipFamily != "" && r.ChipFamily == chipFamily {
+		boost += boostChipFamily
+	}
+
+	if boost > 1.0 {
+		boost = 1.0
+	}
+	return boost
+}
+
+// tokenize lowercases s and splits on spaces, underscores, hyphens, and
+// forward slashes — all common delimiters in STM32 identifiers and queries.
+func tokenize(s string) []string {
+	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return r == ' ' || r == '_' || r == '-' || r == '/'
+	})
+}
+
+// exactRegisterMatch returns true only when every token of the register name
+// appears in queryTokens. For USART_BRR → ["usart","brr"], both must be
+// present in the query to avoid false positives from partial token matches.
+func exactRegisterMatch(registerName string, queryTokens []string) bool {
+	if registerName == "" {
+		return false
+	}
+	querySet := makeSet(queryTokens)
+	for _, rt := range tokenize(registerName) {
+		if !querySet[rt] {
+			return false
+		}
+	}
+	return true
+}
+
+// fieldTokenOverlap returns true if any token of field appears in queryTokens.
+// Used for peripheral matching where a single token match is sufficient.
+func fieldTokenOverlap(field string, queryTokens []string) bool {
+	if field == "" {
+		return false
+	}
+	querySet := makeSet(queryTokens)
+	for _, ft := range tokenize(field) {
+		if querySet[ft] {
+			return true
+		}
+	}
+	return false
+}
+
+// sectionTitleOverlap returns true if any non-stop-word token from sectionTitle
+// appears in queryTokens. Stop words are excluded to avoid spurious matches.
+func sectionTitleOverlap(sectionTitle string, queryTokens []string) bool {
+	if sectionTitle == "" {
+		return false
+	}
+	stopWords := map[string]bool{
+		"the": true, "a": true, "an": true, "and": true, "or": true,
+		"in": true, "of": true, "to": true, "for": true, "with": true,
+		"is": true, "its": true, "by": true, "on": true, "at": true,
+	}
+	querySet := makeSet(queryTokens)
+	for _, tt := range tokenize(sectionTitle) {
+		if stopWords[tt] {
+			continue
+		}
+		if querySet[tt] {
+			return true
+		}
+	}
+	return false
+}
+
+// makeSet converts a token slice into a O(1) lookup map.
+func makeSet(tokens []string) map[string]bool {
+	s := make(map[string]bool, len(tokens))
+	for _, t := range tokens {
+		s[t] = true
+	}
+	return s
+}
