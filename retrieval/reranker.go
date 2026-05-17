@@ -7,14 +7,14 @@ import (
 	"github.com/Pavan2027/mcu-rag/storage"
 )
 
-// Scoring weights. Must sum to 1.0.
+// Scoring weights for the weighted additive formula. Must sum to 1.0.
 const (
 	weightSemantic = 0.6
 	weightFTS      = 0.2
 	weightMetadata = 0.2
 )
 
-// Metadata boost values. Individual boosts are additive and capped at 1.0.
+// Metadata boost values. Individual boosts are additive and capped at 1.0 total.
 const (
 	boostExactRegister   = 0.30
 	boostPeripheral      = 0.20
@@ -26,14 +26,14 @@ const (
 // Rerank applies the weighted additive scoring formula to a hybrid search
 // result list and returns it sorted by FinalScore descending.
 //
-// It overwrites FinalScore (previously the RRF score from HybridSearch) with:
+// It overwrites the RRF FinalScore set by HybridSearch with:
 //
 //	FinalScore = SemanticScore*0.6 + FTSScore*0.2 + MetadataBoost*0.2
 //
 // Parameters:
 //   - results:    merged hybrid results — FinalScore will be overwritten.
 //   - query:      the original user query, used for metadata token matching.
-//   - chipFamily: active chip family filter (e.g. "STM32F4"), or "" if none.
+//   - chipFamily: the active chip family filter (e.g. "STM32F4"), or "" if none.
 //
 // Rerank is a pure function: no DB access, no side effects.
 func Rerank(results []storage.SearchResult, query, chipFamily string) []storage.SearchResult {
@@ -59,28 +59,24 @@ func Rerank(results []storage.SearchResult, query, chipFamily string) []storage.
 func computeMetadataBoost(r storage.SearchResult, queryTokens []string, chipFamily string) float64 {
 	boost := 0.0
 
-	// +0.30: all tokens of the register name appear in the query.
-	// Requiring all tokens avoids "USART" alone triggering a register boost.
+	// +0.30: ALL tokens of the register name appear in the query.
+	// Requiring all tokens prevents "USART" alone triggering a register boost.
 	if exactRegisterMatch(r.RegisterName, queryTokens) {
 		boost += boostExactRegister
 	}
-
-	// +0.20: peripheral name token appears in query.
+	// +0.20: any token of the peripheral field appears in the query.
 	if fieldTokenOverlap(r.Peripheral, queryTokens) {
 		boost += boostPeripheral
 	}
-
-	// +0.15: any non-stop-word token of the section title appears in query.
+	// +0.15: any non-stop-word token of the section title appears in the query.
 	if sectionTitleOverlap(r.SectionTitle, queryTokens) {
 		boost += boostSectionTitle
 	}
-
-	// +0.10: document is a reference manual (preferred over app notes).
+	// +0.10: reference manuals are preferred over app notes / datasheets.
 	if r.DocType == "reference_manual" {
 		boost += boostReferenceManual
 	}
-
-	// +0.05: chunk belongs to the active chip family filter.
+	// +0.05: chunk belongs to the chip family the user is filtering for.
 	if chipFamily != "" && r.ChipFamily == chipFamily {
 		boost += boostChipFamily
 	}
@@ -92,16 +88,18 @@ func computeMetadataBoost(r storage.SearchResult, queryTokens []string, chipFami
 }
 
 // tokenize lowercases s and splits on spaces, underscores, hyphens, and
-// forward slashes — all common delimiters in STM32 identifiers and queries.
+// forward slashes — the common delimiters in STM32 identifiers and queries.
 func tokenize(s string) []string {
 	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
 		return r == ' ' || r == '_' || r == '-' || r == '/'
 	})
 }
 
-// exactRegisterMatch returns true only when every token of the register name
-// appears in queryTokens. For USART_BRR → ["usart","brr"], both must be
-// present in the query to avoid false positives from partial token matches.
+// exactRegisterMatch returns true only when EVERY token of the register name
+// appears in queryTokens.
+//
+// Example: USART_BRR → ["usart","brr"] — both must be present in the query.
+// This prevents "USART configuration" from triggering a +0.30 register boost.
 func exactRegisterMatch(registerName string, queryTokens []string) bool {
 	if registerName == "" {
 		return false
@@ -116,7 +114,7 @@ func exactRegisterMatch(registerName string, queryTokens []string) bool {
 }
 
 // fieldTokenOverlap returns true if any token of field appears in queryTokens.
-// Used for peripheral matching where a single token match is sufficient.
+// Used for peripheral matching where a single-token match is sufficient.
 func fieldTokenOverlap(field string, queryTokens []string) bool {
 	if field == "" {
 		return false
@@ -131,7 +129,7 @@ func fieldTokenOverlap(field string, queryTokens []string) bool {
 }
 
 // sectionTitleOverlap returns true if any non-stop-word token from sectionTitle
-// appears in queryTokens. Stop words are excluded to avoid spurious matches.
+// appears in queryTokens.
 func sectionTitleOverlap(sectionTitle string, queryTokens []string) bool {
 	if sectionTitle == "" {
 		return false
@@ -143,17 +141,14 @@ func sectionTitleOverlap(sectionTitle string, queryTokens []string) bool {
 	}
 	querySet := makeSet(queryTokens)
 	for _, tt := range tokenize(sectionTitle) {
-		if stopWords[tt] {
-			continue
-		}
-		if querySet[tt] {
+		if !stopWords[tt] && querySet[tt] {
 			return true
 		}
 	}
 	return false
 }
 
-// makeSet converts a token slice into a O(1) lookup map.
+// makeSet converts a token slice into an O(1) lookup map.
 func makeSet(tokens []string) map[string]bool {
 	s := make(map[string]bool, len(tokens))
 	for _, t := range tokens {

@@ -15,16 +15,23 @@ type RetrievalOptions struct {
 	// DocTypes restricts results to specific document types
 	// (e.g. []string{"reference_manual"}). Empty means no restriction.
 	DocTypes []string
+
+	// MaxTokens is the maximum number of tokens in the context window.
+	// Defaults to 3000 if zero.
+	MaxTokens int
 }
 
 // RetrievalResult is the output of the hybrid retrieval pipeline.
-// FinalScore on each chunk is the RRF score at this stage; the reranker
-// (Phase 6) will replace it with the weighted additive score.
 type RetrievalResult struct {
 	// Chunks holds the merged, deduplicated results ordered by FinalScore descending.
 	Chunks []storage.SearchResult
 
-	// ChunksDropped is reserved for the context builder (Phase 7) to report
-	// how many chunks were trimmed due to token budget.
+	// Context is the structured, LLM-ready context string.
+	Context string
+
+	// ChunksUsed is the number of chunks successfully included in the context.
+	ChunksUsed int
+
+	// ChunksDropped is the number of chunks trimmed due to token budget limits.
 	ChunksDropped int
 }

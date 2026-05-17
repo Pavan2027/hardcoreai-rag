@@ -17,11 +17,9 @@ type DB struct {
 // Open loads the sqlite-vec extension and returns a ready DB handle.
 //
 // vecExtPath is the path to the vec0 shared library (vec0.dll on Windows,
-// vec0.so on Linux). If empty, it defaults to looking for the library in a
-// "bin/" directory relative to the current working directory.
+// vec0.so on Linux). If empty, defaults to bin/vec0 next to the working directory.
 func Open(dbPath string, vecExtPath string) (*DB, error) {
 	if vecExtPath == "" {
-		// Default: look for vec0 in bin/ next to the binary.
 		cwd, err := os.Getwd()
 		if err != nil {
 			return nil, fmt.Errorf("storage.Open: could not determine working directory: %w", err)
@@ -29,10 +27,7 @@ func Open(dbPath string, vecExtPath string) (*DB, error) {
 		vecExtPath = filepath.Join(cwd, "bin", "vec0")
 	}
 
-	// Register a custom sqlite3 driver that loads the vec0 extension.
-	// The driver name is unique so it can be registered once per process.
 	driverName := "sqlite3_with_vec"
-	// Guard against duplicate registration (e.g., in tests).
 	for _, d := range sql.Drivers() {
 		if d == driverName {
 			goto openDB
@@ -48,17 +43,14 @@ openDB:
 		return nil, fmt.Errorf("storage.Open: failed to open db at %q: %w", dbPath, err)
 	}
 
-	// Verify the connection and that vec0 was loaded correctly.
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("storage.Open: ping failed (check vec0 extension path %q): %w", vecExtPath, err)
 	}
 
-	// Enable WAL mode for better concurrent read performance.
 	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
 		return nil, fmt.Errorf("storage.Open: failed to set WAL mode: %w", err)
 	}
 
-	// Enable foreign key enforcement.
 	if _, err := db.Exec("PRAGMA foreign_keys=ON;"); err != nil {
 		return nil, fmt.Errorf("storage.Open: failed to enable foreign keys: %w", err)
 	}
@@ -66,10 +58,9 @@ openDB:
 	return &DB{db}, nil
 }
 
-// NewDB is a convenience wrapper (matching the ingestion pipeline entry point)
-// that loads the sqlite-vec extension and initializes all tables using the unified schema.
+// NewDB opens (or creates) a database at dbPath and applies the full production
+// schema. Used by the ingestion pipeline entry point.
 func NewDB(dbPath string) (*DB, error) {
-	// Create directory if it doesn't exist
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create db directory: %w", err)
@@ -146,8 +137,8 @@ func (db *DB) Close() error {
 	return db.DB.Close()
 }
 
-// ApplySchema runs the contents of schemaSQL against the database.
-// Typically used during seed DB setup and tests.
+// ApplySchema executes schemaSQL against the database.
+// Used during DB setup and in tests (in-memory DB).
 func (db *DB) ApplySchema(schemaSQL string) error {
 	if _, err := db.Exec(schemaSQL); err != nil {
 		return fmt.Errorf("storage.ApplySchema: %w", err)
@@ -155,10 +146,10 @@ func (db *DB) ApplySchema(schemaSQL string) error {
 	return nil
 }
 
-// InsertDocument inserts a new document record.
+// InsertDocument inserts a new document record and returns its auto-generated ID.
 func (db *DB) InsertDocument(doc Document) (int64, error) {
 	result, err := db.Exec(`
-		INSERT INTO documents 
+		INSERT INTO documents
 			(mongo_id, filename, local_path, source_url, doc_type, chip_family, chip_model, version, processing_status)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		doc.MongoID, doc.Filename, doc.LocalPath, doc.SourceURL,
@@ -167,19 +158,23 @@ func (db *DB) InsertDocument(doc Document) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert document: %w", err)
 	}
-
 	id, err := result.LastInsertId()
 	if err != nil {
 		return 0, err
 	}
-
 	fmt.Printf("📄 Inserted document: %s (id=%d)\n", doc.Filename, id)
 	return id, nil
 }
 
-// InsertChunk inserts a single chunk record.
+// InsertChunk inserts a single chunk and populates chunk_fts in the same operation.
 func (db *DB) InsertChunk(chunk Chunk) (int64, error) {
-	result, err := db.Exec(`
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("InsertChunk: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(`
 		INSERT INTO chunks
 			(document_id, chunk_text, section_title, subsection_title, peripheral, register_name, page_number, token_count, chunk_index, metadata)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -188,97 +183,106 @@ func (db *DB) InsertChunk(chunk Chunk) (int64, error) {
 		chunk.ChunkIndex, chunk.Metadata,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("failed to insert chunk: %w", err)
+		return 0, fmt.Errorf("InsertChunk: insert chunk: %w", err)
 	}
+	id, _ := result.LastInsertId()
 
-	return result.LastInsertId()
-}
-
-// InsertChunks inserts a batch of chunk records.
-func (db *DB) InsertChunks(chunks []Chunk) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	stmt, err := tx.Prepare(`
-		INSERT INTO chunks
-			(document_id, chunk_text, section_title, subsection_title, peripheral, register_name, page_number, token_count, chunk_index, metadata)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		return fmt.Errorf("failed to prepare statement: %w", err)
-	}
-	defer stmt.Close()
-
-	for _, chunk := range chunks {
-		_, err := stmt.Exec(
-			chunk.DocumentID, chunk.ChunkText, chunk.SectionTitle, chunk.SubsectionTitle,
-			chunk.Peripheral, chunk.RegisterName, chunk.PageNumber, chunk.TokenCount,
-			chunk.ChunkIndex, chunk.Metadata,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to insert chunk %d: %w", chunk.ChunkIndex, err)
-		}
+	// Populate FTS5 content table — must mirror every chunk insert.
+	if _, err := tx.Exec(`
+		INSERT INTO chunk_fts (rowid, chunk_text, section_title, peripheral, register_name)
+		VALUES (?, ?, ?, ?, ?)`,
+		id, chunk.ChunkText, chunk.SectionTitle, chunk.Peripheral, chunk.RegisterName,
+	); err != nil {
+		return 0, fmt.Errorf("InsertChunk: insert chunk_fts id=%d: %w", id, err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+		return 0, fmt.Errorf("InsertChunk: commit: %w", err)
 	}
-
-	fmt.Printf("✅ Inserted %d chunks into database\n", len(chunks))
-	return nil
+	return id, nil
 }
 
-// InsertChunksAndReturnIDs inserts a batch of chunks and returns their auto-generated IDs.
+// InsertChunks inserts a batch of chunks and populates chunk_fts for all of them
+// in a single transaction.
+func (db *DB) InsertChunks(chunks []Chunk) error {
+	_, err := db.insertChunkBatch(chunks)
+	return err
+}
+
+// InsertChunksAndReturnIDs inserts a batch of chunks, populates chunk_fts for each,
+// and returns the auto-generated IDs in insertion order.
+//
+// FIX: chunk_fts is now populated in the same transaction as chunks so that
+// FTS search works on all data inserted by the ingestion pipeline.
 func (db *DB) InsertChunksAndReturnIDs(chunks []Chunk) ([]int, error) {
+	return db.insertChunkBatch(chunks)
+}
+
+// insertChunkBatch is the shared implementation for InsertChunks and
+// InsertChunksAndReturnIDs. It inserts both chunks and chunk_fts rows
+// in a single transaction.
+func (db *DB) insertChunkBatch(chunks []Chunk) ([]int, error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		return nil, fmt.Errorf("insertChunkBatch: begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare(`
+	chunkStmt, err := tx.Prepare(`
 		INSERT INTO chunks
 			(document_id, chunk_text, section_title, subsection_title, peripheral, register_name, page_number, token_count, chunk_index, metadata)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare statement: %w", err)
+		return nil, fmt.Errorf("insertChunkBatch: prepare chunk stmt: %w", err)
 	}
-	defer stmt.Close()
+	defer chunkStmt.Close()
+
+	ftsStmt, err := tx.Prepare(`
+		INSERT INTO chunk_fts (rowid, chunk_text, section_title, peripheral, register_name)
+		VALUES (?, ?, ?, ?, ?)`)
+	if err != nil {
+		return nil, fmt.Errorf("insertChunkBatch: prepare fts stmt: %w", err)
+	}
+	defer ftsStmt.Close()
 
 	ids := make([]int, len(chunks))
 	for i, chunk := range chunks {
-		result, err := stmt.Exec(
+		result, err := chunkStmt.Exec(
 			chunk.DocumentID, chunk.ChunkText, chunk.SectionTitle, chunk.SubsectionTitle,
 			chunk.Peripheral, chunk.RegisterName, chunk.PageNumber, chunk.TokenCount,
 			chunk.ChunkIndex, chunk.Metadata,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to insert chunk %d: %w", chunk.ChunkIndex, err)
+			return nil, fmt.Errorf("insertChunkBatch: insert chunk[%d]: %w", i, err)
 		}
 		id, _ := result.LastInsertId()
 		ids[i] = int(id)
+
+		// Populate FTS in the same transaction so vector and keyword search
+		// always stay in sync with the chunks table.
+		if _, err := ftsStmt.Exec(id, chunk.ChunkText, chunk.SectionTitle, chunk.Peripheral, chunk.RegisterName); err != nil {
+			return nil, fmt.Errorf("insertChunkBatch: insert chunk_fts[%d] id=%d: %w", i, id, err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit: %w", err)
+		return nil, fmt.Errorf("insertChunkBatch: commit: %w", err)
 	}
 
-	fmt.Printf("✅ Inserted %d chunks into database\n", len(chunks))
+	fmt.Printf("✅ Inserted %d chunks (+ FTS rows) into database\n", len(chunks))
 	return ids, nil
 }
 
-// UpdateDocumentStatus updates the processing status and error message of a document.
+// UpdateDocumentStatus updates the processing_status and error_message of a document.
 func (db *DB) UpdateDocumentStatus(id int64, status, errMsg string) error {
-	_, err := db.Exec(`
-		UPDATE documents SET processing_status = ?, error_message = ? WHERE id = ?`,
+	_, err := db.Exec(
+		`UPDATE documents SET processing_status = ?, error_message = ? WHERE id = ?`,
 		status, errMsg, id,
 	)
 	return err
 }
 
-// GetChunksByPeripheral retrieves all chunks belonging to a specific peripheral tag.
+// GetChunksByPeripheral retrieves all chunks tagged with a specific peripheral.
 func (db *DB) GetChunksByPeripheral(peripheral string) ([]Chunk, error) {
 	rows, err := db.Query(`
 		SELECT id, document_id, chunk_text, section_title, peripheral, register_name, page_number, token_count, chunk_index
@@ -291,9 +295,10 @@ func (db *DB) GetChunksByPeripheral(peripheral string) ([]Chunk, error) {
 	var chunks []Chunk
 	for rows.Next() {
 		var c Chunk
-		err := rows.Scan(&c.ID, &c.DocumentID, &c.ChunkText, &c.SectionTitle,
-			&c.Peripheral, &c.RegisterName, &c.PageNumber, &c.TokenCount, &c.ChunkIndex)
-		if err != nil {
+		if err := rows.Scan(
+			&c.ID, &c.DocumentID, &c.ChunkText, &c.SectionTitle,
+			&c.Peripheral, &c.RegisterName, &c.PageNumber, &c.TokenCount, &c.ChunkIndex,
+		); err != nil {
 			return nil, err
 		}
 		chunks = append(chunks, c)

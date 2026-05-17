@@ -28,21 +28,24 @@ func main() {
 	}
 	defer db.Close()
 
-	// 2. Setup embedder and hybrid search options
+	// 2. Setup the orchestrator Engine and search options
 	embedder := &DummyEmbedder{}
+	engine := retrieval.NewEngine(db, embedder)
+	
 	query := "USART register description"
 	opts := retrieval.RetrievalOptions{
 		K:          3,
 		ChipFamily: "STM32F4", // Apply dynamic SQL filter
+		MaxTokens:  2500,     // strict token budget
 	}
 
-	fmt.Printf("\n🔎 Running Hybrid Search + Reranking for query: %q\n", query)
-	fmt.Printf("📋 Options: ChipFamily=%s, K=%d\n\n", opts.ChipFamily, opts.K)
+	fmt.Printf("\n🔎 Running End-to-End Retrieval Engine for query: %q\n", query)
+	fmt.Printf("📋 Options: ChipFamily=%s, K=%d, MaxTokens=%d\n\n", opts.ChipFamily, opts.K, opts.MaxTokens)
 
-	// 3. Execute hybrid search (Vector + FTS RRF merge)
-	res, err := retrieval.HybridSearch(context.Background(), db, embedder, query, opts)
+	// 3. Execute the full orchestrator retrieve pipeline
+	res, err := engine.Retrieve(context.Background(), query, opts)
 	if err != nil {
-		log.Fatalf("❌ HybridSearch failed: %v", err)
+		log.Fatalf("❌ Engine.Retrieve failed: %v", err)
 	}
 
 	if len(res.Chunks) == 0 {
@@ -50,11 +53,9 @@ func main() {
 		return
 	}
 
-	// 4. Run your Reranker on the hybrid search results
-	reranked := retrieval.Rerank(res.Chunks, query, opts.ChipFamily)
-
-	// 5. Print out the retrieved and ranked chunks
-	for i, chunk := range reranked {
+	// 4. Print out the retrieved and ranked chunks with score breakdown
+	fmt.Println("📊 === RANKED SEARCH RESULTS ===")
+	for i, chunk := range res.Chunks {
 		fmt.Printf("Rank %d [Chunk ID: %d]\n", i+1, chunk.ChunkID)
 		fmt.Printf("  • File:       %s\n", chunk.Filename)
 		fmt.Printf("  • Section:    %s\n", chunk.SectionTitle)
@@ -64,6 +65,13 @@ func main() {
 			chunk.SemanticScore, chunk.FTSScore, chunk.MetadataBoost, chunk.FinalScore)
 		fmt.Printf("  • Text Snippet:\n    \"%s...\"\n\n", truncateText(chunk.ChunkText, 150))
 	}
+
+	// 5. Print the formatted LLM-ready Context Builder output
+	fmt.Println("🤖 === LLM-READY CONTEXT WINDOW ===")
+	fmt.Printf("Used Chunks: %d | Dropped Chunks: %d\n", res.ChunksUsed, res.ChunksDropped)
+	fmt.Println("----------------------------------------------------------------------")
+	fmt.Println(res.Context)
+	fmt.Println("----------------------------------------------------------------------")
 }
 
 func truncateText(s string, maxLen int) string {

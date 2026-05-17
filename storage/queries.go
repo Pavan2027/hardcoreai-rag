@@ -33,6 +33,7 @@ const (
 		FROM documents
 	`
 
+	// DEPRECATED:
 	// QueryVectorSearch finds top-K nearest embedding neighbours using sqlite-vec.
 	// The KNN LIMIT must sit directly on the vec0 virtual table — not on an outer
 	// JOIN — otherwise sqlite-vec raises "A LIMIT or 'k = ?' constraint is required".
@@ -54,6 +55,7 @@ const (
 		ORDER BY knn.distance
 	`
 
+	// DEPRECATED: 
 	// QueryFTSSearch performs BM25-ranked full-text search.
 	// The ? parameters are: FTS query string, K limit.
 	QueryFTSSearch = `

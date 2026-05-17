@@ -1,4 +1,4 @@
-package storage
+﻿package storage
 
 // Document maps to the `documents` table.
 type Document struct {
@@ -28,7 +28,7 @@ type Chunk struct {
 	PageNumber      int    `db:"page_number"`
 	TokenCount      int    `db:"token_count"`
 	ChunkIndex      int    `db:"chunk_index"`
-	Metadata        string `db:"metadata"`
+	Metadata        string `db:"metadata"` // JSON blob for extra ingestion-side metadata
 }
 
 // SearchResult is the unified result type returned by all search functions.
@@ -59,8 +59,8 @@ type SearchResult struct {
 
 // SearchOptions contains query parameters for VectorSearch and FTSSearch.
 // All filter fields except K are passed to BuildFilterSQL for SQL-level
-// pre-filtering. Adding fields here automatically applies them in queries
-// without any changes to the function signatures.
+// pre-filtering. Adding a field here automatically applies it without
+// changing any function signatures.
 type SearchOptions struct {
 	// K is the maximum number of results to return.
 	K int

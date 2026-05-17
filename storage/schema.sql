@@ -30,8 +30,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     FOREIGN KEY(document_id) REFERENCES documents(id)
 );
 
--- Vector table (sqlite-vec)
--- Using 768 dimensions for nomic-embed-text
+-- Vector table (sqlite-vec, 768 dimensions for nomic-embed-text)
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
     chunk_id INTEGER PRIMARY KEY,
     embedding FLOAT[768]
@@ -47,7 +46,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts USING fts5(
     content_rowid='id'
 );
 
--- Indexes for performance
+-- Performance indexes
 CREATE INDEX IF NOT EXISTS idx_documents_chip_family ON documents(chip_family);
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(processing_status);
 CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id);
