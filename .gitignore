@@ -6,6 +6,8 @@
 *.dylib
 /bin/
 /dist/
+rag-cli
+hardcoreai-rag
 
 # Go test artifacts
 *.test
@@ -16,6 +18,7 @@ coverage.out
 # Go workspace
 go.work
 go.work.sum
+vendor/
 
 # Environment variables (never commit secrets)
 .env
@@ -26,6 +29,15 @@ go.work.sum
 *.db-shm
 *.db-wal
 data/
+testdata/*.db
+
+# Test PDFs
+testdata/*.pdf
+!testdata/README.md
+
+# Config with secrets
+configs/config.yaml
+!configs/config.example.yaml
 
 # IDE / editor
 .vscode/
@@ -41,3 +53,6 @@ Thumbs.db
 # Ollama extension binaries placed in bin/
 # vec0.dll / vec0.so should be downloaded locally, not committed
 bin/
+
+# Logs
+*.log

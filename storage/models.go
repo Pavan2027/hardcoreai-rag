@@ -1,30 +1,34 @@
-﻿package storage
+package storage
 
 // Document maps to the `documents` table.
 type Document struct {
-	ID         int    `db:"id"`
-	MongoID    string `db:"mongo_id"`
-	Filename   string `db:"filename"`
-	DocType    string `db:"doc_type"`
-	ChipFamily string `db:"chip_family"`
-	ChipModel  string `db:"chip_model"`
-	Version    string `db:"version"`
-	CreatedAt  string `db:"created_at"`
+	ID               int    `db:"id"`
+	MongoID          string `db:"mongo_id"`
+	Filename         string `db:"filename"`
+	LocalPath        string `db:"local_path"`
+	SourceURL        string `db:"source_url"`
+	DocType          string `db:"doc_type"`
+	ChipFamily       string `db:"chip_family"`
+	ChipModel        string `db:"chip_model"`
+	Version          string `db:"version"`
+	ProcessingStatus string `db:"processing_status"`
+	ErrorMessage     string `db:"error_message"`
+	CreatedAt        string `db:"created_at"`
 }
 
 // Chunk maps to the `chunks` table.
 type Chunk struct {
-	ID              int       `db:"id"`
-	DocumentID      int       `db:"document_id"`
-	ChunkText       string    `db:"chunk_text"`
-	SectionTitle    string    `db:"section_title"`
-	SubsectionTitle string    `db:"subsection_title"`
-	Peripheral      string    `db:"peripheral"`
-	RegisterName    string    `db:"register_name"`
-	PageNumber      int       `db:"page_number"`
-	TokenCount      int       `db:"token_count"`
-	ChunkIndex      int       `db:"chunk_index"`
-	Embedding       []float64 `db:"embedding"`
+	ID              int    `db:"id"`
+	DocumentID      int    `db:"document_id"`
+	ChunkText       string `db:"chunk_text"`
+	SectionTitle    string `db:"section_title"`
+	SubsectionTitle string `db:"subsection_title"`
+	Peripheral      string `db:"peripheral"`
+	RegisterName    string `db:"register_name"`
+	PageNumber      int    `db:"page_number"`
+	TokenCount      int    `db:"token_count"`
+	ChunkIndex      int    `db:"chunk_index"`
+	Metadata        string `db:"metadata"`
 }
 
 // SearchResult is the unified result type returned by all search functions.
