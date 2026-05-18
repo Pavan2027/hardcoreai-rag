@@ -134,16 +134,7 @@ hardcoreai-rag/
 - Go 1.24+
 - A populated `data/rag.db` (run the ingestion pipeline once first)
 
-### 1. Clone and build
-
-```bash
-git clone https://github.com/Pavan2027/hardcoreai-rag.git
-cd hardcoreai-rag
-
-go build -tags "sqlite_fts5" ./...
-```
-
-### 2. Download and index documents
+### 1. Download and index documents
 
 ```bash
 # Download STM32 PDFs from ST's public server directly into data/
@@ -154,7 +145,7 @@ go run -tags "sqlite_fts5" ./scripts/download_stm_docs/main.go
 go run -tags "sqlite_fts5" ./cmd/rag-cli/main.go ingest
 ```
 
-### 3. Verify retrieval is working
+### 2. Verify retrieval is working
 
 ```bash
 # Quick smoke test against the indexed production DB
