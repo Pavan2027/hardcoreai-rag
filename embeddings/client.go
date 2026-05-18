@@ -147,9 +147,19 @@ func (c *Client) EmbedBatch(ctx context.Context, texts []string) ([][]float64, e
 	}
 
 	results := make([][]float64, len(texts))
-	const batchSize = 100
+	const batchSize = 50
 
 	for i := 0; i < len(texts); i += batchSize {
+		// Add a rate-limiting delay between batch requests (except the first one)
+		// to satisfy Google's burst RPM/TPM limits safely.
+		if i > 0 {
+			select {
+			case <-time.After(2 * time.Second):
+			case <-ctx.Done():
+				return nil, fmt.Errorf("embeddings.Client.EmbedBatch: context cancelled: %w", ctx.Err())
+			}
+		}
+
 		end := i + batchSize
 		if end > len(texts) {
 			end = len(texts)
