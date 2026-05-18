@@ -1,6 +1,6 @@
 package retrieval
 
-import "github.com/Pavan2027/mcu-rag/storage"
+import "hardcoreai-rag/storage"
 
 // RetrievalOptions controls the full hybrid retrieval pipeline.
 type RetrievalOptions struct {

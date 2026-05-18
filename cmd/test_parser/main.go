@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 
-	"github.com/Pavan2027/mcu-rag/indexing"
-	"github.com/Pavan2027/mcu-rag/ingestion"
-	"github.com/Pavan2027/mcu-rag/storage"
+	"hardcoreai-rag/indexing"
+	"hardcoreai-rag/ingestion"
+	"hardcoreai-rag/storage"
+	"hardcoreai-rag/utils"
 )
 
 type DocConfig struct {
@@ -30,6 +32,9 @@ var docsToIngest = []DocConfig{
 }
 
 func main() {
+	// Load environment variables from .env file (if present)
+	_ = utils.LoadEnv(".env")
+
 	const dbPath = "testdata/test.db"
 
 	// Step 1: Setup storage DB
@@ -39,8 +44,15 @@ func main() {
 	}
 	defer db.Close()
 
-	// Step 2: Setup indexer with mock embedder
-	embedder := indexing.NewMockEmbedder()
+	// Step 2: Setup indexer with appropriate embedder
+	var embedder *indexing.Embedder
+	if os.Getenv("GEMINI_API_KEY") == "" {
+		fmt.Println("⚠️  Warning: GEMINI_API_KEY environment variable is not set. Falling back to MockEmbedder.")
+		embedder = indexing.NewMockEmbedder()
+	} else {
+		fmt.Println("🚀 Using live Gemini Embedder (gemini-embedding-001)")
+		embedder = indexing.NewEmbedder("", "")
+	}
 	indexer, err := indexing.NewIndexer(dbPath, embedder)
 	if err != nil {
 		log.Fatalf("Indexer failed: %v", err)

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Pavan2027/mcu-rag/retrieval"
-	"github.com/Pavan2027/mcu-rag/storage"
-	"github.com/Pavan2027/mcu-rag/utils"
+	"hardcoreai-rag/retrieval"
+	"hardcoreai-rag/storage"
+	"hardcoreai-rag/utils"
 )
 
 // --- Tokenizer Tests --------------------------------------------------------

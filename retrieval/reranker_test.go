@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/Pavan2027/mcu-rag/retrieval"
-	"github.com/Pavan2027/mcu-rag/storage"
+	"hardcoreai-rag/retrieval"
+	"hardcoreai-rag/storage"
 )
 
 // TestRerank_ExactRegisterBoost verifies that a chunk matching the exact register

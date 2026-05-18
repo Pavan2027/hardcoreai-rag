@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Pavan2027/mcu-rag/retrieval"
+	"hardcoreai-rag/retrieval"
 )
 
 // RunBenchmark runs a test query suite against the retrieval Engine and computes evaluation metrics.

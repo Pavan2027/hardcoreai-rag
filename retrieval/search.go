@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Pavan2027/mcu-rag/embeddings"
-	"github.com/Pavan2027/mcu-rag/storage"
+	"hardcoreai-rag/embeddings"
+	"hardcoreai-rag/storage"
 )
 
 // RetrievalEngine is the public interface for the unified retrieval pipeline.

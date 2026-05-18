@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/Pavan2027/mcu-rag/embeddings"
-	"github.com/Pavan2027/mcu-rag/storage"
+	"hardcoreai-rag/embeddings"
+	"hardcoreai-rag/storage"
 )
 
 // rrfK is the RRF constant from the original paper.

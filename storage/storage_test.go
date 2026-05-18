@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Pavan2027/mcu-rag/storage"
+	"hardcoreai-rag/storage"
 )
 
 // schemaSQL reads the schema file from disk.
@@ -19,24 +19,15 @@ func schemaSQL(t *testing.T) string {
 	return string(data)
 }
 
-// vecPath returns the vec0 extension path from env or the default bin location.
-func vecPath() string {
-	if p := os.Getenv("VEC0_PATH"); p != "" {
-		return p
-	}
-	return "../bin/vec0"
-}
-
-// TestOpen_InMemory verifies that the DB opens with the vec0 extension loaded
-// and that the schema can be applied cleanly.
+// TestOpen_InMemory verifies that the DB opens and that the schema can be applied cleanly.
 //
 // HOW TO RUN:
 //
 //	go test ./storage/ -run TestOpen_InMemory -v
 func TestOpen_InMemory(t *testing.T) {
-	db, err := storage.Open(":memory:", vecPath())
+	db, err := storage.Open(":memory:", "")
 	if err != nil {
-		t.Fatalf("storage.Open failed: %v\n\nMake sure vec0.dll is in bin/ or set VEC0_PATH.", err)
+		t.Fatalf("storage.Open failed: %v", err)
 	}
 	defer db.Close()
 
@@ -44,8 +35,8 @@ func TestOpen_InMemory(t *testing.T) {
 		t.Fatalf("ApplySchema failed: %v", err)
 	}
 
-	// Verify all four tables were created.
-	for _, tbl := range []string{"documents", "chunks", "vec_chunks", "chunk_fts"} {
+	// Verify all three tables were created.
+	for _, tbl := range []string{"documents", "chunks", "chunk_fts"} {
 		var name string
 		err := db.QueryRow(
 			"SELECT name FROM sqlite_master WHERE name = ?", tbl,
@@ -64,7 +55,7 @@ func TestOpen_InMemory(t *testing.T) {
 //
 //	go test ./storage/ -run TestBasicInsertAndQuery -v
 func TestBasicInsertAndQuery(t *testing.T) {
-	db, err := storage.Open(":memory:", vecPath())
+	db, err := storage.Open(":memory:", "")
 	if err != nil {
 		t.Fatalf("storage.Open: %v", err)
 	}

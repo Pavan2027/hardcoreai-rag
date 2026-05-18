@@ -5,26 +5,19 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
+// Indexer generates embeddings and writes them to the chunks.embedding column.
 type Indexer struct {
 	db       *sql.DB
 	embedder *Embedder
 }
 
+// NewIndexer opens the database and returns a ready Indexer.
 func NewIndexer(dbPath string, embedder *Embedder) (*Indexer, error) {
-	// The DB is opened standardly using the CGO driver registered by storage.
-	// Since we are running in rag-cli or test_parser, we can use "sqlite3_with_vec" as the driver.
-	// We'll check if "sqlite3_with_vec" is registered, otherwise fall back to standard "sqlite3".
-	driver := "sqlite3"
-	for _, d := range sql.Drivers() {
-		if d == "sqlite3_with_vec" {
-			driver = "sqlite3_with_vec"
-			break
-		}
-	}
-
-	db, err := sql.Open(driver, dbPath)
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open db: %w", err)
 	}
@@ -37,6 +30,10 @@ func NewIndexer(dbPath string, embedder *Embedder) (*Indexer, error) {
 	return &Indexer{db: db, embedder: embedder}, nil
 }
 
+// IndexChunks generates embeddings for chunkTexts and writes each embedding
+// to the chunks.embedding column for the corresponding chunkID.
+//
+// chunkIDs and chunkTexts must be the same length and in the same order.
 func (idx *Indexer) IndexChunks(chunkIDs []int, chunkTexts []string) error {
 	fmt.Printf("🔢 Generating embeddings for %d chunks...\n", len(chunkTexts))
 
@@ -51,8 +48,9 @@ func (idx *Indexer) IndexChunks(chunkIDs []int, chunkTexts []string) error {
 	}
 	defer tx.Rollback()
 
-	// Store embeddings in the vec_chunks virtual table for vector search
-	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)`)
+	// Write each embedding blob directly to the chunks table.
+	// The blob format is little-endian float32, matching storage.SerializeEmbedding.
+	stmt, err := tx.Prepare(`UPDATE chunks SET embedding = ? WHERE id = ?`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
@@ -60,8 +58,8 @@ func (idx *Indexer) IndexChunks(chunkIDs []int, chunkTexts []string) error {
 
 	for i, embedding := range embeddings {
 		blob := float32SliceToBytes(embedding)
-		if _, err := stmt.Exec(chunkIDs[i], blob); err != nil {
-			return fmt.Errorf("failed to store embedding %d: %w", i, err)
+		if _, err := stmt.Exec(blob, chunkIDs[i]); err != nil {
+			return fmt.Errorf("failed to store embedding for chunk %d: %w", chunkIDs[i], err)
 		}
 	}
 
@@ -69,14 +67,17 @@ func (idx *Indexer) IndexChunks(chunkIDs []int, chunkTexts []string) error {
 		return fmt.Errorf("failed to commit: %w", err)
 	}
 
-	fmt.Printf("✅ Stored %d embeddings in vec_chunks\n", len(embeddings))
+	fmt.Printf("✅ Stored %d embeddings in chunks.embedding\n", len(embeddings))
 	return nil
 }
 
+// Close closes the underlying database connection.
 func (idx *Indexer) Close() error {
 	return idx.db.Close()
 }
 
+// float32SliceToBytes serializes a float32 slice to little-endian bytes.
+// This is the same format as storage.SerializeEmbedding — both must stay in sync.
 func float32SliceToBytes(floats []float32) []byte {
 	b := make([]byte, len(floats)*4)
 	for i, f := range floats {

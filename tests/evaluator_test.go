@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Pavan2027/mcu-rag/evaluation"
-	"github.com/Pavan2027/mcu-rag/retrieval"
-	"github.com/Pavan2027/mcu-rag/storage"
+	"hardcoreai-rag/evaluation"
+	"hardcoreai-rag/retrieval"
+	"hardcoreai-rag/storage"
 )
 
 func TestMetrics_IsMatch(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3" // registers the "sqlite3" driver on import
 )
 
 // DB wraps the standard sql.DB with project-specific helpers.
@@ -14,37 +14,19 @@ type DB struct {
 	*sql.DB
 }
 
-// Open loads the sqlite-vec extension and returns a ready DB handle.
+// Open opens a SQLite database at dbPath using the plain sqlite3 driver.
 //
-// vecExtPath is the path to the vec0 shared library (vec0.dll on Windows,
-// vec0.so on Linux). If empty, defaults to bin/vec0 next to the working directory.
+// vecExtPath is accepted for backward compatibility but is no longer used —
+// sqlite-vec was removed in favour of in-Go cosine similarity. Pass "" or
+// any string; it is silently ignored.
 func Open(dbPath string, vecExtPath string) (*DB, error) {
-	if vecExtPath == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("storage.Open: could not determine working directory: %w", err)
-		}
-		vecExtPath = filepath.Join(cwd, "bin", "vec0")
-	}
-
-	driverName := "sqlite3_with_vec"
-	for _, d := range sql.Drivers() {
-		if d == driverName {
-			goto openDB
-		}
-	}
-	sql.Register(driverName, &sqlite3.SQLiteDriver{
-		Extensions: []string{vecExtPath},
-	})
-
-openDB:
-	db, err := sql.Open(driverName, dbPath)
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("storage.Open: failed to open db at %q: %w", dbPath, err)
 	}
 
 	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("storage.Open: ping failed (check vec0 extension path %q): %w", vecExtPath, err)
+		return nil, fmt.Errorf("storage.Open: ping failed: %w", err)
 	}
 
 	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
@@ -58,8 +40,7 @@ openDB:
 	return &DB{db}, nil
 }
 
-// NewDB opens (or creates) a database at dbPath and applies the full production
-// schema. Used by the ingestion pipeline entry point.
+// NewDB opens (or creates) a database at dbPath and applies the full production schema.
 func NewDB(dbPath string) (*DB, error) {
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -99,12 +80,8 @@ func NewDB(dbPath string) (*DB, error) {
 		token_count INTEGER,
 		chunk_index INTEGER,
 		metadata TEXT,
+		embedding BLOB,
 		FOREIGN KEY(document_id) REFERENCES documents(id)
-	);
-
-	CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
-		chunk_id INTEGER PRIMARY KEY,
-		embedding FLOAT[768]
 	);
 
 	CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts USING fts5(
@@ -128,7 +105,7 @@ func NewDB(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("NewDB: failed to apply schema: %w", err)
 	}
 
-	fmt.Println("✅ Database connected, vec0 loaded, and tables ready")
+	fmt.Println("✅ Database connected and tables ready")
 	return db, nil
 }
 
@@ -138,7 +115,6 @@ func (db *DB) Close() error {
 }
 
 // ApplySchema executes schemaSQL against the database.
-// Used during DB setup and in tests (in-memory DB).
 func (db *DB) ApplySchema(schemaSQL string) error {
 	if _, err := db.Exec(schemaSQL); err != nil {
 		return fmt.Errorf("storage.ApplySchema: %w", err)
@@ -166,7 +142,7 @@ func (db *DB) InsertDocument(doc Document) (int64, error) {
 	return id, nil
 }
 
-// InsertChunk inserts a single chunk and populates chunk_fts in the same operation.
+// InsertChunk inserts a single chunk and its FTS row in one transaction.
 func (db *DB) InsertChunk(chunk Chunk) (int64, error) {
 	tx, err := db.Begin()
 	if err != nil {
@@ -187,13 +163,11 @@ func (db *DB) InsertChunk(chunk Chunk) (int64, error) {
 	}
 	id, _ := result.LastInsertId()
 
-	// Populate FTS5 content table — must mirror every chunk insert.
-	if _, err := tx.Exec(`
-		INSERT INTO chunk_fts (rowid, chunk_text, section_title, peripheral, register_name)
-		VALUES (?, ?, ?, ?, ?)`,
+	if _, err := tx.Exec(
+		`INSERT INTO chunk_fts (rowid, chunk_text, section_title, peripheral, register_name) VALUES (?, ?, ?, ?, ?)`,
 		id, chunk.ChunkText, chunk.SectionTitle, chunk.Peripheral, chunk.RegisterName,
 	); err != nil {
-		return 0, fmt.Errorf("InsertChunk: insert chunk_fts id=%d: %w", id, err)
+		return 0, fmt.Errorf("InsertChunk: insert chunk_fts: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -202,25 +176,18 @@ func (db *DB) InsertChunk(chunk Chunk) (int64, error) {
 	return id, nil
 }
 
-// InsertChunks inserts a batch of chunks and populates chunk_fts for all of them
-// in a single transaction.
+// InsertChunks inserts a batch of chunks and their FTS rows.
 func (db *DB) InsertChunks(chunks []Chunk) error {
 	_, err := db.insertChunkBatch(chunks)
 	return err
 }
 
-// InsertChunksAndReturnIDs inserts a batch of chunks, populates chunk_fts for each,
+// InsertChunksAndReturnIDs inserts a batch of chunks, populates chunk_fts,
 // and returns the auto-generated IDs in insertion order.
-//
-// FIX: chunk_fts is now populated in the same transaction as chunks so that
-// FTS search works on all data inserted by the ingestion pipeline.
 func (db *DB) InsertChunksAndReturnIDs(chunks []Chunk) ([]int, error) {
 	return db.insertChunkBatch(chunks)
 }
 
-// insertChunkBatch is the shared implementation for InsertChunks and
-// InsertChunksAndReturnIDs. It inserts both chunks and chunk_fts rows
-// in a single transaction.
 func (db *DB) insertChunkBatch(chunks []Chunk) ([]int, error) {
 	tx, err := db.Begin()
 	if err != nil {
@@ -237,9 +204,8 @@ func (db *DB) insertChunkBatch(chunks []Chunk) ([]int, error) {
 	}
 	defer chunkStmt.Close()
 
-	ftsStmt, err := tx.Prepare(`
-		INSERT INTO chunk_fts (rowid, chunk_text, section_title, peripheral, register_name)
-		VALUES (?, ?, ?, ?, ?)`)
+	ftsStmt, err := tx.Prepare(
+		`INSERT INTO chunk_fts (rowid, chunk_text, section_title, peripheral, register_name) VALUES (?, ?, ?, ?, ?)`)
 	if err != nil {
 		return nil, fmt.Errorf("insertChunkBatch: prepare fts stmt: %w", err)
 	}
@@ -258,10 +224,8 @@ func (db *DB) insertChunkBatch(chunks []Chunk) ([]int, error) {
 		id, _ := result.LastInsertId()
 		ids[i] = int(id)
 
-		// Populate FTS in the same transaction so vector and keyword search
-		// always stay in sync with the chunks table.
 		if _, err := ftsStmt.Exec(id, chunk.ChunkText, chunk.SectionTitle, chunk.Peripheral, chunk.RegisterName); err != nil {
-			return nil, fmt.Errorf("insertChunkBatch: insert chunk_fts[%d] id=%d: %w", i, id, err)
+			return nil, fmt.Errorf("insertChunkBatch: insert chunk_fts[%d]: %w", i, err)
 		}
 	}
 
@@ -273,7 +237,7 @@ func (db *DB) insertChunkBatch(chunks []Chunk) ([]int, error) {
 	return ids, nil
 }
 
-// UpdateDocumentStatus updates the processing_status and error_message of a document.
+// UpdateDocumentStatus updates processing_status and error_message for a document.
 func (db *DB) UpdateDocumentStatus(id int64, status, errMsg string) error {
 	_, err := db.Exec(
 		`UPDATE documents SET processing_status = ?, error_message = ? WHERE id = ?`,

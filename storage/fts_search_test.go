@@ -11,7 +11,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Pavan2027/mcu-rag/storage"
+	"hardcoreai-rag/storage"
 )
 
 // seedFTSDB sets up an in-memory DB with three chunks populated in both
@@ -25,7 +25,7 @@ import (
 func seedFTSDB(t *testing.T) *storage.DB {
 	t.Helper()
 
-	db, err := storage.Open(":memory:", vecPath())
+	db, err := storage.Open(":memory:", "")
 	if err != nil {
 		t.Fatalf("storage.Open: %v", err)
 	}

@@ -8,13 +8,13 @@ import (
 )
 
 // Embedder is the interface all embedding clients must satisfy.
-// This makes it easy to swap the backend (Ollama, OpenAI, etc.) in tests.
+// Keeping []float64 at the interface boundary means no other package changes.
 type Embedder interface {
 	EmbedQuery(ctx context.Context, query string) ([]float64, error)
 }
 
 // EmbedQuery converts a user query string into a 768-dimensional vector
-// using the nomic-embed-text model via Ollama.
+// using gemini-embedding-001 via the Gemini API.
 //
 // Retries up to maxRetries times with exponential backoff on transient errors.
 func (c *Client) EmbedQuery(ctx context.Context, query string) ([]float64, error) {
@@ -25,7 +25,7 @@ func (c *Client) EmbedQuery(ctx context.Context, query string) ([]float64, error
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
-			// Exponential backoff: 500ms, 1s, 2s ...
+			// Exponential backoff: 500ms, 1s, 2s …
 			backoff := time.Duration(math.Pow(2, float64(attempt-1))*500) * time.Millisecond
 			select {
 			case <-time.After(backoff):
@@ -40,7 +40,7 @@ func (c *Client) EmbedQuery(ctx context.Context, query string) ([]float64, error
 			continue
 		}
 
-		// Validate dimensions — must match the schema (768 for nomic-embed-text).
+		// Validate dimensions — must match the schema and the ingestion pipeline.
 		if len(vec) != ExpectedDimensions {
 			return nil, fmt.Errorf(
 				"embeddings.EmbedQuery: expected %d dimensions, got %d (model mismatch?)",

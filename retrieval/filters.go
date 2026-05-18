@@ -1,6 +1,6 @@
 package retrieval
 
-import "github.com/Pavan2027/mcu-rag/storage"
+import "hardcoreai-rag/storage"
 
 // StorageOptions converts a RetrievalOptions into a storage.SearchOptions
 // ready to pass to VectorSearch or FTSSearch.

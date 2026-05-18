@@ -1,4 +1,4 @@
-module github.com/Pavan2027/mcu-rag
+module hardcoreai-rag
 
 go 1.24.1
 

@@ -22,7 +22,6 @@ vendor/
 
 # Environment variables (never commit secrets)
 .env
-.env.*
 
 # SQLite database files (seed DB is generated, not committed)
 *.db

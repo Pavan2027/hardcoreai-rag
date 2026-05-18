@@ -1,15 +1,17 @@
 package indexing
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
+
+	"hardcoreai-rag/embeddings"
 )
 
 const EmbeddingDimension = 768
 
 type Embedder struct {
-	apiURL string
-	apiKey string
+	client *embeddings.Client
 	mock   bool
 }
 
@@ -20,8 +22,7 @@ func NewMockEmbedder() *Embedder {
 
 func NewEmbedder(apiURL, apiKey string) *Embedder {
 	return &Embedder{
-		apiURL: apiURL,
-		apiKey: apiKey,
+		client: embeddings.NewClient(apiURL, ""),
 		mock:   false,
 	}
 }
@@ -30,20 +31,48 @@ func (e *Embedder) EmbedText(text string) ([]float32, error) {
 	if e.mock {
 		return mockEmbedding(), nil
 	}
-	// Real API call goes here later
-	return nil, fmt.Errorf("real embedder not implemented yet")
+	
+	// Real Gemini API Call!
+	vec64, err := e.client.EmbedQuery(context.Background(), text)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert []float64 to []float32
+	vec32 := make([]float32, len(vec64))
+	for i, v := range vec64 {
+		vec32[i] = float32(v)
+	}
+	return vec32, nil
 }
 
 func (e *Embedder) EmbedBatch(texts []string) ([][]float32, error) {
-	embeddings := make([][]float32, len(texts))
-	for i, text := range texts {
-		emb, err := e.EmbedText(text)
-		if err != nil {
-			return nil, fmt.Errorf("failed to embed text %d: %w", i, err)
+	if e.mock {
+		embeddings := make([][]float32, len(texts))
+		for i := range texts {
+			embeddings[i] = mockEmbedding()
 		}
-		embeddings[i] = emb
+		fmt.Printf("✅ Generated %d mock embeddings (dim=%d)\n", len(embeddings), EmbeddingDimension)
+		return embeddings, nil
 	}
-	fmt.Printf("✅ Generated %d embeddings (dim=%d)\n", len(embeddings), EmbeddingDimension)
+
+	// Real Gemini Batch API Call!
+	vecs64, err := e.client.EmbedBatch(context.Background(), texts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert [][]float64 to [][]float32
+	embeddings := make([][]float32, len(vecs64))
+	for i, v64 := range vecs64 {
+		v32 := make([]float32, len(v64))
+		for j, val := range v64 {
+			v32[j] = float32(val)
+		}
+		embeddings[i] = v32
+	}
+
+	fmt.Printf("✅ Generated %d real batch embeddings (dim=%d)\n", len(embeddings), EmbeddingDimension)
 	return embeddings, nil
 }
 

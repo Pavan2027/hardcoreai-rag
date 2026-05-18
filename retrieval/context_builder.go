@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Pavan2027/mcu-rag/storage"
-	"github.com/Pavan2027/mcu-rag/utils"
+	"hardcoreai-rag/storage"
+	"hardcoreai-rag/utils"
 )
 
 // ContextBuilderResult holds the output of the BuildContext function.

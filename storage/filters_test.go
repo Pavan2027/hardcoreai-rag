@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Pavan2027/mcu-rag/storage"
+	"hardcoreai-rag/storage"
 )
 
 // TestBuildFilterSQL_Empty verifies empty opts returns no clause or args.

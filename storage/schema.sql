@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 -- Chunks table
+-- embedding BLOB stores a little-endian float32 vector written by the indexer.
+-- VectorSearch reads this column and computes cosine similarity in Go.
 CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     document_id INTEGER NOT NULL,
@@ -27,16 +29,11 @@ CREATE TABLE IF NOT EXISTS chunks (
     token_count INTEGER,
     chunk_index INTEGER,
     metadata TEXT,
+    embedding BLOB,
     FOREIGN KEY(document_id) REFERENCES documents(id)
 );
 
--- Vector table (sqlite-vec, 768 dimensions for nomic-embed-text)
-CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
-    chunk_id INTEGER PRIMARY KEY,
-    embedding FLOAT[768]
-);
-
--- Full-text search (FTS5)
+-- Full-text search (FTS5, built into sqlite3 with -tags fts5)
 CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts USING fts5(
     chunk_text,
     section_title,

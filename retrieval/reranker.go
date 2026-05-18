@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Pavan2027/mcu-rag/storage"
+	"hardcoreai-rag/storage"
 )
 
 // Scoring weights for the weighted additive formula. Must sum to 1.0.

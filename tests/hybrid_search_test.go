@@ -13,18 +13,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Pavan2027/mcu-rag/retrieval"
-	"github.com/Pavan2027/mcu-rag/storage"
+	"hardcoreai-rag/retrieval"
+	"hardcoreai-rag/storage"
 )
 
 // --- Infrastructure ---------------------------------------------------------
-
-func vecPathInteg() string {
-	if p := os.Getenv("VEC0_PATH"); p != "" {
-		return p
-	}
-	return "../bin/vec0"
-}
 
 func schemaSQLInteg(t *testing.T) string {
 	t.Helper()
@@ -58,7 +51,7 @@ func unitVecInteg(i int) []float64 {
 }
 
 // seedHybridDB creates an in-memory DB seeded with three STM32 chunks,
-// embeddings in vec_chunks, and rows in chunk_fts.
+// embeddings in chunks, and rows in chunk_fts.
 //
 // Chunk mapping:
 //
@@ -68,7 +61,7 @@ func unitVecInteg(i int) []float64 {
 func seedHybridDB(t *testing.T) *storage.DB {
 	t.Helper()
 
-	db, err := storage.Open(":memory:", vecPathInteg())
+	db, err := storage.Open(":memory:", "")
 	if err != nil {
 		t.Fatalf("storage.Open: %v", err)
 	}
@@ -122,8 +115,8 @@ func seedHybridDB(t *testing.T) *storage.DB {
 		chunkID, _ := res.LastInsertId()
 
 		blob := storage.SerializeEmbedding(unitVecInteg(c.vecIdx))
-		if _, err := db.Exec(`INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)`, chunkID, blob); err != nil {
-			t.Fatalf("insert vec_chunks: %v", err)
+		if _, err := db.Exec(`UPDATE chunks SET embedding = ? WHERE id = ?`, blob, chunkID); err != nil {
+			t.Fatalf("update embedding: %v", err)
 		}
 
 		if _, err := db.Exec(`
