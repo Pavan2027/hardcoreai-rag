@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 
 	"hardcoreai-rag/indexing"
 	"hardcoreai-rag/ingestion"
@@ -44,15 +43,9 @@ func main() {
 	}
 	defer db.Close()
 
-	// Step 2: Setup indexer with appropriate embedder
-	var embedder *indexing.Embedder
-	if os.Getenv("GEMINI_API_KEY") == "" {
-		fmt.Println("⚠️  Warning: GEMINI_API_KEY environment variable is not set. Falling back to MockEmbedder.")
-		embedder = indexing.NewMockEmbedder()
-	} else {
-		fmt.Println("🚀 Using live Gemini Embedder (gemini-embedding-001)")
-		embedder = indexing.NewEmbedder("", "")
-	}
+	// Step 2: Setup indexer with deterministic local embedder
+	fmt.Println("Using deterministic local offline embedder")
+	embedder := indexing.NewEmbedder()
 	indexer, err := indexing.NewIndexer(dbPath, embedder)
 	if err != nil {
 		log.Fatalf("Indexer failed: %v", err)
@@ -70,7 +63,7 @@ func main() {
 		// Parse
 		doc, err := parser.ParsePDF(docConfig.LocalPath)
 		if err != nil {
-			fmt.Printf("❌ Failed to parse: %v\n", err)
+			fmt.Printf("Failed to parse: %v\n", err)
 			continue
 		}
 
@@ -84,7 +77,7 @@ func main() {
 			Version:    docConfig.Version,
 		})
 		if err != nil {
-			fmt.Printf("❌ Failed to insert document: %v\n", err)
+			fmt.Printf("Failed to insert document: %v\n", err)
 			continue
 		}
 
@@ -110,7 +103,7 @@ func main() {
 		chunkIDs, err := db.InsertChunksAndReturnIDs(storageChunks)
 		if err != nil {
 			db.UpdateDocumentStatus(docID, "failed", err.Error())
-			fmt.Printf("❌ Failed to insert chunks: %v\n", err)
+			fmt.Printf("Failed to insert chunks: %v\n", err)
 			continue
 		}
 
@@ -123,12 +116,12 @@ func main() {
 		// Generate and store embeddings
 		if err := indexer.IndexChunks(chunkIDs, chunkTexts); err != nil {
 			db.UpdateDocumentStatus(docID, "failed", err.Error())
-			fmt.Printf("❌ Failed to index embeddings: %v\n", err)
+			fmt.Printf("Failed to index embeddings: %v\n", err)
 			continue
 		}
 
 		db.UpdateDocumentStatus(docID, "indexed", "")
-		fmt.Printf("✅ Fully indexed: %s\n", docConfig.Filename)
+		fmt.Printf("Fully indexed: %s\n", docConfig.Filename)
 	}
 
 	fmt.Printf("\n=============================\n")
