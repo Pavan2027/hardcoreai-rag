@@ -8,12 +8,9 @@ import (
 	"hardcoreai-rag/indexing"
 	"hardcoreai-rag/retrieval"
 	"hardcoreai-rag/storage"
-	"hardcoreai-rag/utils"
 )
 
 func main() {
-	// Load environment variables from .env file (if present)
-	_ = utils.LoadEnv(".env")
 
 	fmt.Println("Initializing Live Retrieval Verification...")
 

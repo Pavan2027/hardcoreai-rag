@@ -7,7 +7,6 @@ import (
 	"hardcoreai-rag/indexing"
 	"hardcoreai-rag/ingestion"
 	"hardcoreai-rag/storage"
-	"hardcoreai-rag/utils"
 )
 
 type DocConfig struct {
@@ -31,9 +30,6 @@ var docsToIngest = []DocConfig{
 }
 
 func main() {
-	// Load environment variables from .env file (if present)
-	_ = utils.LoadEnv(".env")
-
 	const dbPath = "testdata/test.db"
 
 	// Step 1: Setup storage DB
