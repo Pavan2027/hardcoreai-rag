@@ -282,14 +282,4 @@ Boosts are additive and capped at 1.0.
 
 ---
 
-## Scope
-
-This sub-project owns the retrieval layer. It does **not** own:
-
-- PDF parsing or chunking logic (`ingestion/` — teammate-owned)
-- The Bubble Tea / Glamour frontend UI (planned, not yet built)
-- LLM inference — this system outputs a context string and stops there
-
----
-
 <p align="center">Built with Go + SQLite · 2026</p>
