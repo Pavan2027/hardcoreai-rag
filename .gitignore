@@ -55,3 +55,7 @@ bin/
 
 # Logs
 *.log
+
+testdata/*.db
+
+testdata/stm_docs/*.pdf
